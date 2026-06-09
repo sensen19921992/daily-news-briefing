@@ -26,6 +26,8 @@ RSS_FEEDS = {
     ],
 }
 
+JUNK_PHRASES = ["farvetema", "cookie", "log ind", "login", "javascript", "indstilling", "auto", "lys og mork"]
+
 
 def get_cutoff():
     return datetime.now(timezone.utc) - timedelta(hours=12)
@@ -35,14 +37,23 @@ def clean_html(text):
     return re.sub(r"<[^>]+>", "", text or "").strip()
 
 
+def is_junk(text):
+    t = text.lower()
+    return any(phrase in t for phrase in JUNK_PHRASES)
+
+
 def scrape_article_summary(url, max_chars=350):
     try:
         resp = requests.get(url, headers=HEADERS, timeout=8)
         soup = BeautifulSoup(resp.text, "html.parser")
-        for p in soup.find_all("p"):
-            text = p.get_text(strip=True)
-            if len(text) > 80:
-                return text[:max_chars] + ("..." if len(text) > max_chars else "")
+        for container in ["article", "main", "body"]:
+            section = soup.find(container)
+            if not section:
+                continue
+            for p in section.find_all("p"):
+                text = p.get_text(strip=True)
+                if len(text) > 80 and not is_junk(text):
+                    return text[:max_chars] + ("..." if len(text) > max_chars else "")
     except Exception:
         pass
     return ""
@@ -51,10 +62,7 @@ def scrape_article_summary(url, max_chars=350):
 def fetch_rss(urls, cutoff, max_items=2):
     for url in urls:
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=10)
-            if resp.status_code != 200:
-                continue
-            feed = feedparser.parse(resp.content)
+            feed = feedparser.parse(url)
             if not feed.entries:
                 continue
             recent = []
@@ -77,7 +85,7 @@ def fetch_dr(cutoff, max_items=2):
     for e in entries:
         title = clean_html(e.get("title", "Ingen titel"))
         link = e.get("link", "")
-        summary = scrape_article_summary(link) if link else "Laes mere pa dr.dk"
+        summary = scrape_article_summary(link) if link else ""
         result.append({"title": title, "summary": summary or "Laes mere pa dr.dk"})
     return result
 
@@ -90,13 +98,13 @@ def fetch_tv2(max_items=2):
         articles = []
         for a in soup.find_all("a", href=True):
             href = a["href"]
-            if not (re.search(r"/\d{4}/\d{2}/\d{2}/", href) or "/nyhed" in href or re.search(r"nyheder\.tv2\.dk/.+/.+", href)):
+            if not (re.search(r"/\d{4}/\d{2}/\d{2}/", href) or "/nyhed" in href):
                 continue
             h = a.find(["h2", "h3"])
             if not h:
                 continue
             title = h.get_text(strip=True)
-            if len(title) < 20 or title in seen:
+            if len(title) < 20 or title in seen or is_junk(title):
                 continue
             seen.add(title)
             article_url = href if href.startswith("http") else "https://nyheder.tv2.dk" + href
@@ -110,8 +118,7 @@ def fetch_tv2(max_items=2):
 
 
 def format_entry(entry, index):
-    summary = entry.get("summary", "Ingen beskrivelse tilgaengelig.")
-    return str(index) + ". " + entry["title"] + "\n" + summary
+    return str(index) + ". " + entry["title"] + "\n" + entry.get("summary", "")
 
 
 def format_rss_entry(entry, index):
@@ -134,9 +141,11 @@ def main():
     parts = []
 
     parts.append("TV2")
-    for i, e in enumerate(fetch_tv2(), 1):
-        parts.append(format_entry(e, i))
-    if not fetch_tv2():
+    tv2_entries = fetch_tv2()
+    if tv2_entries:
+        for i, e in enumerate(tv2_entries, 1):
+            parts.append(format_entry(e, i))
+    else:
         parts.append("Ingen nyheder fundet.")
     parts.append("")
 
