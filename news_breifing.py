@@ -63,7 +63,7 @@ def main():
     cutoff = get_cutoff()
     date_str = now.strftime("%d/%m/%Y")
     is_morning = 4 <= now.hour < 14
-    title = f"Morgen-nyheder — {date_str}" if is_morning else f"Aften-nyheder — {date_str}"
+    title = f"Morgen-nyheder - {date_str}" if is_morning else f"Aften-nyheder - {date_str}"
 
     parts = []
     for source, urls in FEEDS.items():
