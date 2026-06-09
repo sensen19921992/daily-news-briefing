@@ -7,28 +7,23 @@ from bs4 import BeautifulSoup
 
 NTFY_URL = "https://ntfy.sh/frederik_daily_news"
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
 RSS_FEEDS = {
-    "DR": [
-        "https://www.dr.dk/nyheder/service/feeds/allenyheder",
-    ],
     "Politiken": [
         "https://politiken.dk/rss/",
-        "https://politiken.dk/feed/",
+        "https://politiken.dk/rss",
     ],
     "Berlingske": [
         "https://www.berlingske.dk/rss/allenyheder",
         "https://www.berlingske.dk/rss/",
-        "https://www.berlingske.dk/feed/",
     ],
     "Borsen": [
         "https://borsen.dk/rss",
         "https://borsen.dk/feed/",
-        "https://borsen.dk/rss/nyheder",
     ],
-}
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; NewsBot/1.0)"
 }
 
 
@@ -38,6 +33,19 @@ def get_cutoff():
 
 def clean_html(text):
     return re.sub(r"<[^>]+>", "", text or "").strip()
+
+
+def scrape_article_summary(url, max_chars=350):
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=8)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        for p in soup.find_all("p"):
+            text = p.get_text(strip=True)
+            if len(text) > 80:
+                return text[:max_chars] + ("..." if len(text) > max_chars else "")
+    except Exception:
+        pass
+    return ""
 
 
 def fetch_rss(urls, cutoff, max_items=2):
@@ -63,19 +71,47 @@ def fetch_rss(urls, cutoff, max_items=2):
     return []
 
 
+def fetch_dr(cutoff, max_items=2):
+    entries = fetch_rss(["https://www.dr.dk/nyheder/service/feeds/allenyheder"], cutoff, max_items)
+    result = []
+    for e in entries:
+        title = clean_html(e.get("title", "Ingen titel"))
+        link = e.get("link", "")
+        summary = scrape_article_summary(link) if link else "Laes mere pa dr.dk"
+        result.append({"title": title, "summary": summary or "Laes mere pa dr.dk"})
+    return result
+
+
 def fetch_tv2(max_items=2):
     try:
         resp = requests.get("https://nyheder.tv2.dk", headers=HEADERS, timeout=10)
         soup = BeautifulSoup(resp.text, "html.parser")
+        seen = set()
         articles = []
-        for tag in soup.find_all(["h2", "h3"], limit=30):
-            text = tag.get_text(strip=True)
-            if len(text) > 20:
-                articles.append(text)
-        articles = list(dict.fromkeys(articles))
-        return [{"title": t, "summary": ""} for t in articles[:max_items]]
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if not (re.search(r"/\d{4}/\d{2}/\d{2}/", href) or "/nyhed" in href or re.search(r"nyheder\.tv2\.dk/.+/.+", href)):
+                continue
+            h = a.find(["h2", "h3"])
+            if not h:
+                continue
+            title = h.get_text(strip=True)
+            if len(title) < 20 or title in seen:
+                continue
+            seen.add(title)
+            article_url = href if href.startswith("http") else "https://nyheder.tv2.dk" + href
+            summary = scrape_article_summary(article_url)
+            articles.append({"title": title, "summary": summary or "Laes mere pa nyheder.tv2.dk"})
+            if len(articles) >= max_items:
+                break
+        return articles
     except Exception:
         return []
+
+
+def format_entry(entry, index):
+    summary = entry.get("summary", "Ingen beskrivelse tilgaengelig.")
+    return str(index) + ". " + entry["title"] + "\n" + summary
 
 
 def format_rss_entry(entry, index):
@@ -85,11 +121,7 @@ def format_rss_entry(entry, index):
         summary = "Ingen beskrivelse tilgaengelig."
     if len(summary) > 400:
         summary = summary[:397] + "..."
-    return f"{index}. {title}\n{summary}"
-
-
-def format_scraped_entry(entry, index):
-    return f"{index}. {entry['title']}\nLaes mere pa nyheder.tv2.dk"
+    return str(index) + ". " + title + "\n" + summary
 
 
 def main():
@@ -102,10 +134,17 @@ def main():
     parts = []
 
     parts.append("TV2")
-    tv2_entries = fetch_tv2()
-    if tv2_entries:
-        for i, e in enumerate(tv2_entries, 1):
-            parts.append(format_scraped_entry(e, i))
+    for i, e in enumerate(fetch_tv2(), 1):
+        parts.append(format_entry(e, i))
+    if not fetch_tv2():
+        parts.append("Ingen nyheder fundet.")
+    parts.append("")
+
+    parts.append("DR")
+    dr_entries = fetch_dr(cutoff)
+    if dr_entries:
+        for i, e in enumerate(dr_entries, 1):
+            parts.append(format_entry(e, i))
     else:
         parts.append("Ingen nyheder fundet.")
     parts.append("")
