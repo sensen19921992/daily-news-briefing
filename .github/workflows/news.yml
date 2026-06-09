@@ -21,4 +21,4 @@ jobs:
         run: pip install feedparser requests
 
       - name: Send news briefing
-        run: python news_briefing.py
+        run: python news_breifing.py
