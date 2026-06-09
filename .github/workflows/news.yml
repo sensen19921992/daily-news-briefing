@@ -2,8 +2,8 @@ name: Daily News Briefing
 
 on:
   schedule:
-    - cron: '0 6 * * *'   # 08:00 dansk sommertid (CEST)
-    - cron: '0 18 * * *'  # 20:00 dansk sommertid (CEST)
+    - cron: '0 6 * * *'
+    - cron: '0 18 * * *'
   workflow_dispatch:
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install feedparser requests
+        run: pip install feedparser requests beautifulsoup4
 
       - name: Send news briefing
         run: python news_breifing.py
