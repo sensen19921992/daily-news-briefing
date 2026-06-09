@@ -31,11 +31,14 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; NewsBot/1.0)"
 }
 
+
 def get_cutoff():
     return datetime.now(timezone.utc) - timedelta(hours=12)
 
+
 def clean_html(text):
     return re.sub(r"<[^>]+>", "", text or "").strip()
+
 
 def fetch_rss(urls, cutoff, max_items=2):
     for url in urls:
@@ -59,7 +62,8 @@ def fetch_rss(urls, cutoff, max_items=2):
             continue
     return []
 
-def fetch_tv2(cutoff, max_items=2):
+
+def fetch_tv2(max_items=2):
     try:
         resp = requests.get("https://nyheder.tv2.dk", headers=HEADERS, timeout=10)
         soup = BeautifulSoup(resp.text, "html.parser")
@@ -68,10 +72,11 @@ def fetch_tv2(cutoff, max_items=2):
             text = tag.get_text(strip=True)
             if len(text) > 20:
                 articles.append(text)
-        articles = list(dict.fromkeys(articles))  # deduplicate
+        articles = list(dict.fromkeys(articles))
         return [{"title": t, "summary": ""} for t in articles[:max_items]]
     except Exception:
         return []
+
 
 def format_rss_entry(entry, index):
     title = clean_html(entry.get("title", "Ingen titel"))
@@ -82,21 +87,22 @@ def format_rss_entry(entry, index):
         summary = summary[:397] + "..."
     return f"{index}. {title}\n{summary}"
 
+
 def format_scraped_entry(entry, index):
     return f"{index}. {entry['title']}\nLaes mere pa nyheder.tv2.dk"
+
 
 def main():
     now = datetime.now(timezone.utc)
     cutoff = get_cutoff()
     date_str = now.strftime("%d/%m/%Y")
     is_morning = 4 <= now.hour < 14
-    title = f"Morgen-nyheder - {date_str}" if is_morning else f"Aften-nyheder - {date_str}"
+    title = "Morgen-nyheder - " + date_str if is_morning else "Aften-nyheder - " + date_str
 
     parts = []
 
-    # TV2 via scraping
     parts.append("TV2")
-    tv2_entries = fetch_tv2(cutoff)
+    tv2_entries = fetch_tv2()
     if tv2_entries:
         for i, e in enumerate(tv2_entries, 1):
             parts.append(format_scraped_entry(e, i))
@@ -104,7 +110,6 @@ def main():
         parts.append("Ingen nyheder fundet.")
     parts.append("")
 
-    # RSS sources
     for source, urls in RSS_FEEDS.items():
         parts.append(source)
         entries = fetch_rss(urls, cutoff)
@@ -128,9 +133,11 @@ def main():
     )
 
     if resp.status_code == 200:
-        print(f"Sendt: {title}")
+        print("Sendt: " + title)
     else:
-        print(f"Fejl: {resp.status_code} - {resp.text}", file=sys.stderr)
+        print("Fejl: " + str(resp.status_code) + " - " + resp.text, file=sys.stderr)
         sys.exit(1)
 
-if
+
+if __name__ == "__main__":
+    main()
